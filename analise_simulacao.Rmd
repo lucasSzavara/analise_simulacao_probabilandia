@@ -21,31 +21,46 @@ library(tidyr)
 
 # Criação do Design da simulação
 
-Nesse momento vamos considerar apenas um tabuleiro, sem as bifurcações. Também vamos considerar apenas o próximo passo, removendo situações em que ganhar menos pontos imediatamente aumenta os pontos a serem ganhos posteriormente
+Nesse momento vamos considerar 2 tabuleiros, um em que o jogador sempre escolhe ir pela bifurcação com mais perguntas, e outro em que o jogador prefere evitar as perguntas. Vamos considerar apenas o próximo passo, removendo situações em que ganhar menos pontos imediatamente aumenta os pontos a serem ganhos posteriormente.
+
+Para simplicidade ao calcular o número de pontos ganhos, vamos substituir as letras indicando o tipo de casa pelo índice no vetor de pontos
 ```{r}
-tabuleiro <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r', 'b', 'v', 'r',
-               'b', 'v', 'r', 'b', 'v', 'r', 'r', 'r', 'b', 'v', 'b', 'r', 'r')
-print(table(tabuleiro))
-tabuleiro[tabuleiro == 'b'] <- 1
-tabuleiro[tabuleiro == 'r'] <- 2
-tabuleiro[tabuleiro == 'v'] <- 3
-tabuleiro <- tabuleiro %>% 
+tabuleiro_prefere <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r', 'b', 'v', 'v',
+               'r', 'b', 'v', 'r', 'b', 'v', 'r', 'r', 'r', 'b', 'v', 'b', 'v',
+               'v', 'v')
+tabuleiro_evita_pergunta <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r',
+                              'b', 'r', 'r', 'r', 'b', 'v', 'r', 'r', 'r', 'b',
+                              'v', 'b', 'r', 'r')
+print(table(tabuleiro_prefere))
+print(table(tabuleiro_evita_pergunta))
+tabuleiro_prefere[tabuleiro_prefere == 'b'] <- 1
+tabuleiro_prefere[tabuleiro_prefere == 'r'] <- 2
+tabuleiro_prefere[tabuleiro_prefere == 'v'] <- 3
+tabuleiro_prefere <- tabuleiro_prefere %>% 
+    as.double()
+
+tabuleiro_evita_pergunta[tabuleiro_evita_pergunta == 'b'] <- 1
+tabuleiro_evita_pergunta[tabuleiro_evita_pergunta == 'r'] <- 2
+tabuleiro_evita_pergunta[tabuleiro_evita_pergunta == 'v'] <- 3
+tabuleiro_evita_pergunta <- tabuleiro_evita_pergunta %>% 
     as.double()
 dados <- c(4, 6, 8, 10, 12)
 ```
 
 
 Vamos criar uma tabela com todas as combinações a serem consideradas das variáveis a seguir:
+Para simplificação ao gerar o pdf, vamos restringir o valor, mas podemos incluir as opções desejadas
 ```{r}
 Design <- createDesign(
-    # A probabilidade de acerto de uma pergunta:
-    probabilidade_acerto = c(0.1, 0.3, 0.5, 0.7, 0.9),
+    # Tabuleiro a ser usado:
+    tabuleiro = list(tabuleiro_prefere, tabuleiro_evita_pergunta),
+    # A probabilidade de acerto de uma pergunta do jogador que não evita:
+    probabilidade_acerto = c(0.1, 0.5),
     # Quantidade de pontos (casa branca, rosa, erro, acerto):
-    pontos = list(c(3, 1, 0, 5), c(2, 1, 0, 3), c(3, 1, -5, 5)),
+    pontos = list(c(3, 1, 0, 5)),# c(2, 1, 0, 3), c(3, 1, -5, 5)),
     # Posição atual:
-    posicao = c(1, 5, 10, 15, 20, 25)
+    posicao = c(1)#, 5, 10, 15, 20)
 )
-Design[1:5, ] %>% as.data.frame() %>% head()
 ```
 # Simulação dos cenários
 
@@ -53,30 +68,31 @@ Design[1:5, ] %>% as.data.frame() %>% head()
 Agora, vamos criar uma função tal que, dado um cenário, ela gera o próximo passo a ser tomado
 ```{r}
 Generate <- function(condition, fixed_objects = FALSE) {
-    prob_acerto <- condition$probabilidade_acerto
     # Quantidade de passos para cada dado
     passos <- dados %>% 
         sapply(function(d) sample(1:d, 1))
-    # Se tiver pergunta, o jogador irá acertar?
-    resposta_correta <- rbinom(1, 1, prob_acerto)
-    return(list(passos=passos, resposta_correta=resposta_correta))
+    # Variável para auxiliar a identificar se o jogador irá acertar a pergunta
+    resposta_correta <- runif(1)
+    return(list(passos = passos, resposta_correta = resposta_correta))
 }
 ```
 
 ## Análise de um passo
 ```{r}
-Analyse <- Analyse <- function(condition, dat, fixed_objects=FALSE) {
+Analyse <- function(condition, dat, fixed_objects=FALSE) {
     pontos <- condition$pontos[[1]]
     posicao <- condition$posicao
+    tabuleiro <- condition$tabuleiro[[1]]
     passos <- dat$passos
-    resposta_correta <- dat$resposta_correta
+    resposta_correta <- dat$resposta_correta <= condition$probabilidade_acerto
     posicao_atual <- (posicao + passos) %% (1 + length(tabuleiro))
     deu_volta <- posicao + passos > length(tabuleiro)
     posicao_atual[deu_volta] <- posicao_atual[deu_volta] + 1
     tipo_posicao <- tabuleiro[posicao_atual]
     ponto <- tipo_posicao
-    ponto[ponto == 3] <- ponto[ponto == 3] + resposta_correta
-    return(pontos[ponto])
+    caiu_em_pergunta <- ponto == 3
+    ponto[caiu_em_pergunta] <- ponto[caiu_em_pergunta] + resposta_correta
+    return(c(pontos = pontos[ponto], caiu_em_pergunta = caiu_em_pergunta))
 }
 ```
 
@@ -85,6 +101,17 @@ Analyse <- Analyse <- function(condition, dat, fixed_objects=FALSE) {
 
 ```{r}
 Summarise <- function(condition, results, fixed_objects=FALSE) {
+    
+    caiu_em_pergunta <- results[, 6:10]
+    results <- results[, 1:5]
+    
+    # Probabilidade de cada dado de cair em pergunta
+    pp_d4 <- mean(caiu_em_pergunta[, 1])
+    pp_d6 <- mean(caiu_em_pergunta[, 2])
+    pp_d8 <- mean(caiu_em_pergunta[, 3])
+    pp_d10 <- mean(caiu_em_pergunta[, 4])
+    pp_d12 <- mean(caiu_em_pergunta[, 5])
+    
     
     # Probabilidade de cada dado apresentar o melhor resultado
     p_d4 <- mean(results[, 1] == apply(results, 1, max))
@@ -115,6 +142,11 @@ Summarise <- function(condition, results, fixed_objects=FALSE) {
     sd_pontos_d10 <- sd(results[, 4])
     sd_pontos_d12 <- sd(results[, 5])
     return(c(
+        pp_d4 = pp_d4,
+        pp_d6 = pp_d6,
+        pp_d8 = pp_d8,
+        pp_d10 = pp_d10,
+        pp_d12 = pp_d12,
         
         p_d4 = p_d4,
         p_d6 = p_d6,
@@ -122,17 +154,17 @@ Summarise <- function(condition, results, fixed_objects=FALSE) {
         p_d10 = p_d10,
         p_d12 = p_d12,
         
-        media_pontos_d4 = media_pontos_d4,
-        media_pontos_d6 = media_pontos_d6,
-        media_pontos_d8 = media_pontos_d8,
-        media_pontos_d10 = media_pontos_d10,
-        media_pontos_d12 = media_pontos_d12,
+        media_d4 = media_pontos_d4,
+        media_d6 = media_pontos_d6,
+        media_d8 = media_pontos_d8,
+        media_d10 = media_pontos_d10,
+        media_d12 = media_pontos_d12,
         
-        mediana_pontos_d4 = mediana_pontos_d4,
-        mediana_pontos_d6 = mediana_pontos_d6,
-        mediana_pontos_d8 = mediana_pontos_d8,
-        mediana_pontos_d10 = mediana_pontos_d10,
-        mediana_pontos_d12 = mediana_pontos_d12,
+        mediana_d4 = mediana_pontos_d4,
+        mediana_d6 = mediana_pontos_d6,
+        mediana_d8 = mediana_pontos_d8,
+        mediana_d10 = mediana_pontos_d10,
+        mediana_d12 = mediana_pontos_d12,
         
         sd_pontos_d4 = sd_pontos_d4,
         sd_pontos_d6 = sd_pontos_d6,
@@ -147,7 +179,7 @@ Summarise <- function(condition, results, fixed_objects=FALSE) {
 
 Cenário escolhido:
 ```{r}
-condition <- Design[42, ]
+condition <- Design[1, ]
 print(condition$pontos[[1]])
 print(condition$posicao)
 ```
@@ -159,20 +191,22 @@ dat
 ```
 Tipo das posições alcançadas usando cada dado
 ```{r}
-tabuleiro[condition$posicao + dat$passos]
+tabuleiro_prefere[condition$posicao + dat$passos]
 ```
-Pontos ganhos usando cada dado
+Pontos ganhos usando cada dado e indicador binário se caiu ou não em pergunta
 ```{r}
 results <- Analyse(condition, dat)
 results
 ```
 
+
 Aparentemente, nossas funções funcionam de acordo com o esperado. Vamos rodar a simulação completa e obter os resultados agrupados
 
 ## Execução da simulação
-```{r message=FALSE}
+```{r message=FALSE, results='hide'}
 res <- runSimulation(
     Design,
+    # Trocar para executar
     replications = 500,
     generate = Generate, 
     analyse = Analyse,
@@ -184,55 +218,40 @@ saveRDS(res, 'resultados.rds')
 
 # Resultados
 
-Podemos agora analisar o resultado no cenário de interesse:
-```{r}
+Podemos agora analisar o resultado no cenário de interesse, considerando que os jogadores estão na posição 1, o jogador que prefere perguntas tem 50% de probabilidade de acertar a pergunta, enquanto o jogador que evita pergunta tem 10%, e a distribuição de pontos é a que será usada no jogo. Para sinalização das colunas, *E* representa o jogador que evita perguntas, e *P* o jogador que prefere perguntas
+```{r paged.print=TRUE}
+res <- res %>% 
+    mutate(tabuleiro = as.character(tabuleiro)) %>% 
+    mutate(tabuleiro = if_else(
+        nchar(tabuleiro) == 73,
+        'E',
+        'P'
+        ))
 resultado_cenario_1 <- res %>% 
     mutate(pontos = as.character(pontos)) %>% 
     filter(posicao == 1) %>% 
-    filter(probabilidade_acerto == 0.5) %>% 
+    filter(((probabilidade_acerto == 0.5) & (tabuleiro == 'P')) |
+           ((probabilidade_acerto == 0.1) & (tabuleiro == 'E'))) %>% 
     filter(pontos == 'c(3, 1, 0, 5)')
 resultado_cenario_1 %>% 
+    select(tabuleiro:sd_pontos_d12) %>% 
+    select(!probabilidade_acerto) %>% 
     pivot_longer(
-        cols = p_d4:sd_pontos_d12,
+        cols = pp_d4:sd_pontos_d12,
         names_to = c('Medida', 'Dado'),
         names_pattern = '(.*)_d(.*)'
     ) %>% 
     pivot_wider(
-        names_from = 'Dado',
+        names_from = c('Dado', 'tabuleiro'),
         names_prefix = 'd'
     ) %>% 
-    select(Medida:d12)
+    select(Medida | starts_with('d')) %>% 
+    knitr::kable(digits = 3)
 ```
+Como as primeiras casas não tem bifurcações, a diferença na probabilidade de cair em uma pergunta é similar para os dados menores, mas para o D12 a diferença entre os jogadores é clara. Em ambos os casos, o D12 é o dado que maximiza a média e mediana de pontos obtidos, e ainda, se $X_{i}$ é o valor de pontos obtidos usando o Di, temos que $i = 12$ maximiza:
+$$
+P(X_{i} = max\{X_4, X_6, X_8, X_{10}, X_{12}\})
+$$
 
-
-# Rascunho
-```{r}
-i <- c()
-for (j in 1:1000) {
-    i <- c(i, sample(1:4, 1))
-}
-hist(i)
-```
-
-```{r}
-condition <- Design[68, ]
-print(condition$pontos[[1]])
-print(condition$posicao)
-```
-
-```{r}
-dat <- Generate(condition)
-dat
-```
-Com esses tamanhos de passos, caímos na casa 23, 22, 2, 22 e 4
-```{r}
-tabuleiro[c(23, 22, 2, 22, 4)]
-```
-E, consequentemente, como erramos a pergunta, ganhamos, 3, 2, 3, 2, 3 pontos
-
-```{r}
-results <- Analyse(condition, dat)
-results
-```
-
-
+Sendo 45% para o jogador que prefere perguntas e 43% para o que evita
+Por fim, os pontos do jogador que prefere perguntas tem maior média e desvio padrão do que do jogador que evita.
