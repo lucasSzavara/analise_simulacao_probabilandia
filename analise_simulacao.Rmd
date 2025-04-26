@@ -25,9 +25,9 @@ Nesse momento vamos considerar 2 tabuleiros, um em que o jogador sempre escolhe 
 
 Para simplicidade ao calcular o número de pontos ganhos, vamos substituir as letras indicando o tipo de casa pelo índice no vetor de pontos
 ```{r}
-tabuleiro_prefere <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r', 'b', 'v', 'v',
-               'r', 'b', 'v', 'r', 'b', 'v', 'r', 'r', 'r', 'b', 'v', 'b', 'v',
-               'v', 'v')
+tabuleiro_prefere <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r', 'b',
+                       'v', 'v', 'r', 'b', 'v', 'r', 'b', 'v', 'r', 'r', 'r',
+                       'b', 'v', 'b', 'v', 'v', 'v')
 tabuleiro_evita_pergunta <- c('b', 'v', 'r', 'v', 'b', 'r', 'v', 'b', 'v', 'r',
                               'b', 'r', 'r', 'r', 'b', 'v', 'r', 'r', 'r', 'b',
                               'v', 'b', 'r', 'r')
@@ -57,9 +57,9 @@ Design <- createDesign(
     # A probabilidade de acerto de uma pergunta do jogador que não evita:
     probabilidade_acerto = c(0.1, 0.5),
     # Quantidade de pontos (casa branca, rosa, erro, acerto):
-    pontos = list(c(3, 1, 0, 5)),# c(2, 1, 0, 3), c(3, 1, -5, 5)),
+    pontos = list(c(3, 1, 0, 5), c(2, 1, 0, 3), c(3, 1, -5, 5)),
     # Posição atual:
-    posicao = c(1)#, 5, 10, 15, 20)
+    posicao = c(1, 5, 10, 20)#, 5, 10, 15, 20)
 )
 ```
 # Simulação dos cenários
@@ -227,9 +227,11 @@ res <- res %>%
         'E',
         'P'
         ))
+```
+```{r}
 resultado_cenario_1 <- res %>% 
     mutate(pontos = as.character(pontos)) %>% 
-    filter(posicao == 1) %>% 
+    filter(posicao == 10) %>% 
     filter(((probabilidade_acerto == 0.5) & (tabuleiro == 'P')) |
            ((probabilidade_acerto == 0.1) & (tabuleiro == 'E'))) %>% 
     filter(pontos == 'c(3, 1, 0, 5)')
@@ -255,3 +257,47 @@ $$
 
 Sendo 45% para o jogador que prefere perguntas e 43% para o que evita
 Por fim, os pontos do jogador que prefere perguntas tem maior média e desvio padrão do que do jogador que evita.
+
+```{r}
+resultado_cenario_2 <- res %>% 
+    mutate(pontos = as.character(pontos)) %>% 
+    filter(posicao == 10) %>% 
+    filter(((probabilidade_acerto == 0.5) & (tabuleiro == 'P')) |
+           ((probabilidade_acerto == 0.1) & (tabuleiro == 'E'))) %>% 
+    filter(pontos == 'c(3, 1, -5, 5)')
+resultado_cenario_2 %>% 
+    select(tabuleiro:sd_pontos_d12) %>% 
+    select(!probabilidade_acerto) %>% 
+    pivot_longer(
+        cols = pp_d4:sd_pontos_d12,
+        names_to = c('Medida', 'Dado'),
+        names_pattern = '(.*)_d(.*)'
+    ) %>% 
+    pivot_wider(
+        names_from = c('Dado', 'tabuleiro'),
+        names_prefix = 'd'
+    ) %>% 
+    select(Medida | starts_with('d')) %>% 
+    knitr::kable(digits = 3)
+```
+```{r}
+res <- res %>% 
+    mutate(range_media = pmax(media_d4, media_d6, media_d8, media_d10, media_d12) - pmin(media_d4, media_d6, media_d8, media_d10, media_d12))
+res %>% 
+    ggplot(aes(x = range_media)) +
+    geom_histogram()
+```
+```{r}
+res %>% 
+    select(tabuleiro:posicao, media_d4:media_d12, range_media) %>% 
+    arrange(range_media) %>% 
+    head() %>% 
+    knitr::kable(digits = 3)
+```
+```{r}
+res %>% 
+    select(tabuleiro:posicao, media_d4:media_d12, range_media) %>% 
+    arrange(desc(range_media)) %>% 
+    head() %>% 
+    knitr::kable(digits = 3)
+```
